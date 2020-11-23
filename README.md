@@ -6,81 +6,59 @@ Determines whether snapshots have current volumes, are registered as AMIs, used 
 
 This is intended to be run from another golang project's main package.
 
-Package dustcollector seeks to save you money on your AWS bill by
-analyzing an AWS account for old, orphaned EBS snapshots that are
-not being used by any AutoScaling Groups, Launch Templates, Launch
-Configurations, or AMIs that are shared outside the account.
+Sample Usage
+```
+package main
 
-In older AWS accounts with a lot of EBS activity this can be a
-non-trivial amount of money each month. 
+import (
+	"fmt"
+	"github.com/GESkunkworks/dustcollector"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/aws"	
+)
 
-  Note: This is likened to a gold miner collecting gold dust to make
-  nuggets and bars from gold dust hence the struct names.
+func main() {
+	sess = session.New()
+	dateFilter := "2019-01-01"
+	expInput := dustcollector.ExpeditionInput{
+		Session:    sess,
+		DateFilter: &dateFilter,
+	}
+	exp := dustcollector.New(&expInput)
+	err = exp.Start()
+	if err != nil { panic(err) }
+	for _, line := range(exp.GetRecommendations()) {
+		fmt.Println(line)
+	}
+}
+```
 
-Snapshot Cost Overview
+Sample Output
+```
+After analyzing the account we can see that there are 5 snapshots that can be deleted because they were created before 2019-01-01 and are not used in any AutoScaling group or AMI sharing capacity. However, before these snapshots can be deleted several other resources need to be deleted first. Below you can find the ordered deletion plan:
 
-EBS snapshots are billed based on GB-month rate. So if you have a 500GB 
-volume with a single snapshot and the rate is $0.05 per GB-month then 
-that snapshot will cost $25/month to store. Snapshots after the initial 
-snapshot are only the difference of what's changed since the last snapshot. 
-So if you snapshot the volume again and you changed 50GB worth of data 
-then you are billed for 550 GB-month of data so your bill would 
-increase to $27.50 the next month. 
 
-If an EBS volume is deleted then the snapshot will remain in case you 
-want to restore the volume at some point in the future. However, most of 
-the time people just simply forget to delete snapshots when they terminate 
-infrastructure or they intend to keep the snapshot for only a few months 
-but then forget about it. This can leave snapshots laying around for 
-years and the costs can add up. 
+Some of the snapshots we need to delete are currently registered as AMIs or used in Launch Templates/Configs. However we've detected that those AMI's and Launch Templates/Configs are not used in any autoscaling group. This doesn't mean they're not being used by someone (e.g., referenced in a cloudformation template). You should be safe to delete them but you should always check to be sure
 
-This tool is designed to help find that snapshot volume so you can 
-clean it up and save some money. 
+If you feel comfortable then here's the plan:
 
-Usage
-
-Create a dustcollector.Expedition and call the Start() method on it. 
-After the expedition is complete you can collect a summary and 
-deletion plan by calling GetRecommendations()
-
-It provides methods to export the raw Snapshot information to CSV
-that contains the additional metadata that was collected such as 
-AMI's registered with the snapshots, LaunchConfigurations, and 
-AutoScaling groups tied back to the snapshot. This data format
-is referred to as a Nugget.
-
-It provides methods to export another format of the raw Snapshot
-data aggregated by common volume ID to CSV. This is useful for calculating
-potential cost savings. This data format is referred to as a Bar.
-
-Sample
-
-Below is a sample main package you could use to start a dustcollector
-Expedition and collect results.
-
-  package main
-  
-  import (
-  	"fmt"
-  	"github.com/GESkunkworks/dustcollector"
-  	"github.com/aws/aws-sdk-go/aws/session"
-  	"github.com/aws/aws-sdk-go/aws"	
-  )
-  
-  func main() {
-  	sess = session.New()
-  	dateFilter := "2019-01-01"
-  	expInput := dustcollector.ExpeditionInput{
-  		Session:    sess,
-  		DateFilter: &dateFilter,
-  	}
-  	exp := dustcollector.New(&expInput)
-  	err = exp.Start()
-  	if err != nil { panic(err) }
-  	for _, line := range(exp.GetRecommendations()) {
-  		fmt.Println(line)
-  	}
-  }
+Delete the following LaunchTemplates first:
+        test-lt
+then delete the following LaunchConfigurations:
+        test-snap-lc
+then delete the following AMIs:
+        ami-a7ce9bdd
+        ami-6cee4b16
+then finally delete the following Snapshots:
+        snap-092ab265885243a2d
+        snap-005ccdfd0fedb77b6
+        snap-06e70bf98b9e43b2f
+        snap-0a4795e305f1bc40d
+        snap-07a4f8539c10e0dc7
+3 snapshots were spared because their EBS volume still exists
+1 snapshots were spared because they were associated with an autoscaling group, were shared directly to another account, or were registered as an AMI that was shared to another account.
+Total size of eligible for deletion is 40 GB. At a per GB-month rate of $0.050000 there is a potential savings of $2.000000
+```
 
 Read full [godocs here](https://godoc.org/github.com/GESkunkworks/dustcollector)
 
